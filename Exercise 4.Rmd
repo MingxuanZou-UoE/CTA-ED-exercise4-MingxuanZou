@@ -1,0 +1,148 @@
+---
+title: "CTA-Exercise4"
+author: "Mingxuan Zou"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+#### 1. Setup
+
+```{r setup, echo = TRUE, message = FALSE, warning = FALSE}
+library(dplyr)
+library(quanteda) # includes functions to implement Lexicoder
+library(quanteda.textmodels) # for estimating similarity and complexity measures
+library(quanteda.textplots) #for visualizing text modelling results
+library(knitr) # for the kable functions
+library(kableExtra) # enhance the tables' appearance and functionalities
+```
+
+#### 2. Importing Data
+
+```{r importing data}
+tweets  <- readRDS(gzcon(url("https://github.com/cjbarrie/CTA-ED/blob/main/data/sentanalysis/newstweets.rds?raw=true")))
+# Take a sample of 20000 cases
+tweets <- tweets %>%
+  sample_n(20000)
+```
+
+#### 3. Construct a dfm object
+
+```{r construct a dfm object}
+# Creating corpus object, specifying tweet as text field
+tweets_corpus <- corpus(tweets, text_field = 'text')
+
+# Add in username doc-level information
+
+# Assign user names to doc variables in the corpus
+docvars(tweets_corpus, 'username') <- tweets$user_name
+
+# Create a tokens object from the corpus
+tokens_tweets <- tokens(tweets_corpus, remove_punct = TRUE)
+
+# Create a dfm from the tokens
+dfm_tweets <- dfm(tokens_tweets)
+
+# Remove stopwords from the dfm
+dfm_tweets <- dfm_remove(dfm_tweets, pattern = stopwords('english')) # Specify with character object
+
+# View the number of docs (tweets) per newspaper Twitter account
+table(docvars(dfm_tweets, 'user_name'))
+dfm_tweets
+```
+
+#### 4. Estimate wordfish model
+
+```{r estimate wordfish model}
+# Compress the dfm at the newspaper level
+dfm_newstweets <- dfm_group(dfm_tweets, groups = user_name)
+
+# Remove words not used by two or more newspapers
+dfm_newstweets <- dfm_trim(dfm_newstweets, min_docfreq = 2, docfreq_type = 'count')
+
+# Size of the dfm
+dim(dfm_newstweets)
+
+# Estimate the Wordfish model
+set.seed(123L)
+dfm_newstweets_results <- textmodel_wordfish(dfm_newstweets, sparse = TRUE) # # 'sparse = TRUE' densifies large dfm objects and accelerates execution, at the cost of slightly impacting results.
+summary(dfm_newstweets_results)
+
+# Plot the estimates of the latent newspaper position (θ)
+textplot_scale1d(dfm_newstweets_results)
+
+# Plot the 'features' - the word-level betas shows how words are positioned along this dimension, and which words help discriminate between news outlets
+textplot_scale1d(dfm_newstweets_results, margin = 'features')
+
+# Create a df of betas and features
+features <- dfm_newstweets_results['features']
+betas <- dfm_newstweets_results['beta']
+feat_betas <- data.frame(features, betas)
+
+# Visualise by tabulating
+feat_betas %>% 
+  arrange(desc(betas)) %>% 
+  top_n(20) %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = 'striped')
+```
+
+#### 5. Replicating Kaneko et al.
+
+```{r replicating kaneko et al}
+# Import the data into dfm
+kaneko_dfm  <- readRDS(gzcon(url("https://github.com/cjbarrie/CTA-ED/blob/main/data/wordscaling/study1_kaneko.rds?raw=true")))
+
+# Group at newspaper level and remove infrequent words
+table(docvars(kaneko_dfm, "Newspaper"))
+
+# Prepare the newspaper-level dfm
+kaneko_dfm_study1 <- dfm_group(kaneko_dfm, groups = Newspaper) # compress the dfm at the newspaper level
+kaneko_dfm_study1 <- dfm_trim(kaneko_dfm_study1, min_docfreq = 2, docfreq_type = 'count') # remove words not used by two or more newspapers
+
+# Size of the dfm
+dim(kaneko_dfm_study1)
+
+```
+
+#### 6. Exercises
+
+##### 1) Estimate a Wordfish model for the Kaneko, Asano, and Miwa (2021) data
+
+The dfm 'kaneko_dfm_study1' comes from replicating Kaneko et al.
+
+```{r wordfish model for kaneko}
+# Ensure the reproducibility of random operations by ensuring sam sequence of random numbers generated each time the code is run
+set.seed(123L)
+
+# Estimate the model
+kaneko_results <- textmodel_wordfish(kaneko_dfm_study1, sparse = TRUE) # 'sparse = TRUE' densifies large dfm objects and accelerates execution, at the cost of slightly impacting results.
+
+# View the results
+summary(kaneko_results)
+```
+
+##### 2) Visualize the results
+
+Here I visualise the results by plotting the estimates of the latent newspaper position (θ) and the features
+
+```{r plot}
+# Plot the estimates of θs and features
+textplot_scale1d(kaneko_results)
+textplot_scale1d(kaneko_results, margin = 'features')
+```
+
+However, while the estimated thetas are clear, the estimated betas plot a clutter of words, where most words are not recognisable. Therefore, I am creating a table as an alternative approach for presentation.
+
+```{r tabulate}
+# Create a dfm from betas and features
+kaneko_features <- kaneko_results['features']
+kaneko_betas <- kaneko_results['beta']
+kaneko_feat_betas <- data.frame(features, betas)
+
+# Tabulate the features
+kaneko_feat_betas %>% 
+  arrange(desc(kaneko_betas)) %>% # sort the df in descending order of kaneko_betas
+  top_n(20) %>% # select the top 20 rows
+  kable() %>% # converts the filted df into a Markdown table
+  kable_styling(bootstrap_options = 'striped') # Styling the table generated
+```
